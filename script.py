@@ -4,7 +4,7 @@ import requests
 from dotenv import load_dotenv
 import docx
 from docx import Document
-from translate_prompt import extract_text_with_structure, create_translation_prompt
+from translate_prompt import extract_text_with_structure, create_translation_prompt, create_error_report_prompt
 import re
 
 # Load environment variables from the .env file
@@ -20,19 +20,22 @@ def translate_texts():
     country = "Taiwan"
     source_folder = "original_chunks"
     destination_folder = "translated_chunks"
+    review_folder = "review_chunks"
     merged_docx_file = os.path.join(destination_folder, "translated.docx")
 
-    # Ensure the destination directory exists
+    # Ensure the destination directories exist
     os.makedirs(destination_folder, exist_ok=True)
+    os.makedirs(review_folder, exist_ok=True)
 
     # Create a new document for the merged translated content
     merged_translated_doc = Document()
 
     # Iterate over all .docx files in the source folder
-    for filename in sorted(os.listdir(source_folder)):
+    for i, filename in enumerate(sorted(os.listdir(source_folder))):
         if filename.endswith(".docx"):
             source_docx_file = os.path.join(source_folder, filename)
             destination_docx_file = os.path.join(destination_folder, filename)
+            review_docx_file = os.path.join(review_folder, f"chunk_{i}.docx")
             print(f"Processing {source_docx_file}")
 
             # Extract text with structure
@@ -56,46 +59,56 @@ def translate_texts():
             headers = {
                 "Content-Type": "application/json"
             }
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": translation_prompt
-                            }
-                        ]
-                    }
-                ]
-            }
 
-            # Send the request to the API
-            response = requests.post(url, headers=headers, json=payload)
-
-            if response.status_code == 200:
-                response_data = response.json()
-                # Print the entire response to see its structure
-                print("Response JSON:", response_data)
-
-                # Extract the translated text from the response
-                candidates = response_data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        translated_text = parts[0].get("text", "No translated text found")
-                        # Clean the translated text by removing the <SOURCE_TEXT> tags
-                        translated_text = re.sub(r'<SOURCE_TEXT>|</SOURCE_TEXT>', '', translated_text).strip()
+            # Function to call the Gemini API
+            def call_gemini_api(prompt):
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": prompt
+                                }
+                            ]
+                        }
+                    ]
+                }
+                response = requests.post(url, headers=headers, json=payload)
+                if response.status_code == 200:
+                    response_data = response.json()
+                    print("Response JSON:", response_data)
+                    candidates = response_data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            return parts[0].get("text", "No text found")
+                        else:
+                            return "No text found"
                     else:
-                        translated_text = "No translated text found"
+                        return "No text found"
                 else:
-                    translated_text = "No translated text found"
+                    print(f"Error: {response.status_code} - {response.text}")
+                    return None
+
+            # Call the Gemini API for translation
+            translated_text = call_gemini_api(translation_prompt)
+            if translated_text:
+                # Clean the translated text by removing the <SOURCE_TEXT> tags
+                translated_text = re.sub(r'<SOURCE_TEXT>|</SOURCE_TEXT>', '', translated_text).strip()
 
                 # Save each translated chunk to its own file
                 save_translation_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
 
                 # Append the translated text to the merged document
                 append_translation_to_docx(merged_translated_doc, translated_text, elements)
-            else:
-                print(f"Error: {response.status_code} - {response.text}")
+
+                # Generate the error report prompt
+                error_report_prompt = create_error_report_prompt(source_lang, target_lang, country, elements, translated_text)
+                
+                # Call the Gemini API for the error report
+                error_report_text = call_gemini_api(error_report_prompt)
+                if error_report_text:
+                    save_error_report_to_docx(error_report_text, review_docx_file)
 
     # Save the merged translated document
     merged_translated_doc.save(merged_docx_file)
@@ -149,6 +162,12 @@ def append_original_to_docx(merged_doc, source_docx_file):
         for run in paragraph.runs:
             new_run = new_para.add_run(run.text)
             copy_run_formatting(new_run, run)
+
+def save_error_report_to_docx(error_report_text, review_docx_file):
+    review_doc = Document()
+    review_doc.add_paragraph(error_report_text)
+    review_doc.save(review_docx_file)
+    print(f"Error report saved to {review_docx_file}")
 
 def copy_run_formatting(new_run, original_run):
     if original_run:
