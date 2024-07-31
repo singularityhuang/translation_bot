@@ -14,6 +14,9 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
 def translate_texts():
+    # Initialize variables
+    token_counts = []
+    total_tokens_used = 0
     # Define your input parameters
     source_lang = "English"
     target_lang = "Traditional Chinese"
@@ -36,111 +39,114 @@ def translate_texts():
     # Create a new document for the final merged content
     final_doc = Document()
 
-    # Iterate over all .docx files in the source folder
-    for i, filename in enumerate(sorted(os.listdir(source_folder))):
-        if filename.endswith(".docx"):
-            source_docx_file = os.path.join(source_folder, filename)
-            destination_docx_file = os.path.join(destination_folder, filename)
-            review_docx_file = os.path.join(review_folder, f"chunk_{i}.docx")
-            improvement_docx_file = os.path.join(improvement_folder, f"chunk_{i}.docx")
-            natural_docx_file = os.path.join(natural_folder, f"chunk_{i}.docx")
-            error_free_docx_file = os.path.join(error_free_folder, f"chunk_{i}.docx")
-            print(f"Processing {source_docx_file}")
+    # List and sort all .docx files in the source folder numerically
+    files = [f for f in os.listdir(source_folder) if f.startswith("chunk_") and f.endswith(".docx")]
+    files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
 
-            # Extract text with structure
-            elements = extract_text_with_structure(source_docx_file)
+    # Iterate over all .docx files in the source folder in sorted order
+    for i, filename in enumerate(files):
+        source_docx_file = os.path.join(source_folder, filename)
+        destination_docx_file = os.path.join(destination_folder, filename)
+        review_docx_file = os.path.join(review_folder, filename)
+        improvement_docx_file = os.path.join(improvement_folder, filename)
+        natural_docx_file = os.path.join(natural_folder, filename)
+        error_free_docx_file = os.path.join(error_free_folder, filename)
+        print(f"Processing {source_docx_file}")
 
-            # Check if the extracted text is empty or contains only line breaks
-            text_content = "".join(element[1] for element in elements).strip()
-            if not text_content:
-                print(f"Skipping {source_docx_file} as it contains only line breaks or is empty.")
-                # Append the original content to the final document
-                append_original_to_docx(final_doc, source_docx_file)
-                continue
+        # Extract text with structure
+        elements = extract_text_with_structure(source_docx_file)
 
-            # Create the translation prompt
-            translation_prompt = create_translation_prompt(source_lang, target_lang, country, elements)
+        # Check if the extracted text is empty or contains only line breaks
+        text_content = "".join(element[1] for element in elements).strip()
+        if not text_content:
+            print(f"Skipping {source_docx_file} as it contains only line breaks or is empty.")
+            # Append the original content to the final document
+            append_original_to_docx(final_doc, source_docx_file)
+            continue
 
-            # Setup the URL and headers for the API request
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
-            headers = {
-                "Content-Type": "application/json"
+        # Create the translation prompt
+        translation_prompt = create_translation_prompt(source_lang, target_lang, country, elements)
+
+        # Setup the URL and headers for the API request
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        # Function to call the Gemini API
+        def call_gemini_api(prompt):
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ]
             }
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code == 200:
+                response_data = response.json()
+                print("Response JSON:", response_data)
+                return response_data
+            else:
+                print(f"Error: {response.status_code} - {response.text}")
+                return None
 
-            # Function to call the Gemini API
-            def call_gemini_api(prompt):
-                payload = {
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": prompt
-                                }
-                            ]
-                        }
-                    ]
-                }
-                response = requests.post(url, headers=headers, json=payload)
-                if response.status_code == 200:
-                    response_data = response.json()
-                    print("Response JSON:", response_data)
-                    return response_data
-                else:
-                    print(f"Error: {response.status_code} - {response.text}")
-                    return None
+        # Call the Gemini API for translation
+        translation_response = call_gemini_api(translation_prompt)
+        if translation_response:
+            # Extract the translated text from the response
+            translated_text = translation_response['candidates'][0]['content']['parts'][0]['text']
+            # Clean the translated text by removing any tags
+            translated_text = re.sub(r'<[^>]+>', '', translated_text).strip()
 
-            # Call the Gemini API for translation
-            translation_response = call_gemini_api(translation_prompt)
-            if translation_response:
-                # Extract the translated text from the response
-                translated_text = translation_response['candidates'][0]['content']['parts'][0]['text']
-                # Clean the translated text by removing any tags
-                translated_text = re.sub(r'<[^>]+>', '', translated_text).strip()
+            # Save the translated text
+            save_text_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
 
-                # Save the translated text
-                save_text_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
+            # Append the translated text to the final document
+            append_translation_to_docx(final_doc, translated_text, elements)
 
-                # Append the translated text to the final document
-                append_translation_to_docx(final_doc, translated_text, elements)
+            # Generate the error report prompt
+            error_report_prompt = create_error_report_prompt(source_lang, target_lang, country, elements, translated_text)
+            
+            # Call the Gemini API for the error report
+            error_report_response = call_gemini_api(error_report_prompt)
+            if error_report_response:
+                error_report_text = error_report_response['candidates'][0]['content']['parts'][0]['text']
+                save_text_to_docx(source_docx_file, error_report_text, elements, review_docx_file, is_plain_text=True)
 
-                # Generate the error report prompt
-                error_report_prompt = create_error_report_prompt(source_lang, target_lang, country, elements, translated_text)
+            # Generate the improvement prompt using translated chunk and review chunk
+            improvement_prompt = create_improvement_prompt(target_lang, country, translated_text, error_report_text)
+            
+            # Call the Gemini API for the improvement suggestion
+            improvement_response = call_gemini_api(improvement_prompt)
+            if improvement_response:
+                improvement_text = improvement_response['candidates'][0]['content']['parts'][0]['text']
+                improvement_text = re.sub(r'<[^>]+>', '', improvement_text).strip()  # Remove any tags
+                save_text_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file)
+
+                # Generate the natural translation prompt based on the improved text
+                natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text)
                 
-                # Call the Gemini API for the error report
-                error_report_response = call_gemini_api(error_report_prompt)
-                if error_report_response:
-                    error_report_text = error_report_response['candidates'][0]['content']['parts'][0]['text']
-                    save_text_to_docx(source_docx_file, error_report_text, elements, review_docx_file, is_plain_text=True)
-
-                # Generate the improvement prompt using translated chunk and review chunk
-                improvement_prompt = create_improvement_prompt(target_lang, country, translated_text, error_report_text)
-                
-                # Call the Gemini API for the improvement suggestion
-                improvement_response = call_gemini_api(improvement_prompt)
-                if improvement_response:
-                    improvement_text = improvement_response['candidates'][0]['content']['parts'][0]['text']
-                    improvement_text = re.sub(r'<[^>]+>', '', improvement_text).strip()  # Remove any tags
-                    save_text_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file)
-
-                    # Generate the natural translation prompt based on the improved text
-                    natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text)
+                # Call the Gemini API for the natural translation
+                natural_translation_response = call_gemini_api(natural_translation_prompt)
+                if natural_translation_response:
+                    natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text']
+                    natural_translation_text = re.sub(r'<[^>]+>', '', natural_translation_text).strip()  # Remove any tags
+                    save_text_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file)
                     
-                    # Call the Gemini API for the natural translation
-                    natural_translation_response = call_gemini_api(natural_translation_prompt)
-                    if natural_translation_response:
-                        natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text']
-                        natural_translation_text = re.sub(r'<[^>]+>', '', natural_translation_text).strip()  # Remove any tags
-                        save_text_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file)
-                        
-                        # Generate the error-free translation prompt based on the natural translation
-                        error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text)
-                        
-                        # Call the Gemini API for the error-free translation
-                        error_free_translation_response = call_gemini_api(error_free_translation_prompt)
-                        if error_free_translation_response:
-                            error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text']
-                            error_free_translation_text = re.sub(r'<[^>]+>', '', error_free_translation_text).strip()  # Remove any tags
-                            save_text_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file)
+                    # Generate the error-free translation prompt based on the natural translation
+                    error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text)
+                    
+                    # Call the Gemini API for the error-free translation
+                    error_free_translation_response = call_gemini_api(error_free_translation_prompt)
+                    if error_free_translation_response:
+                        error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text']
+                        error_free_translation_text = re.sub(r'<[^>]+>', '', error_free_translation_text).strip()  # Remove any tags
+                        save_text_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file)
 
     # After processing all files, merge error-free translations with original chunks
     merge_error_free_chunks(final_doc, source_folder, error_free_folder)
@@ -148,8 +154,6 @@ def translate_texts():
     # Save the final merged document
     final_doc.save(final_translation_file)
     print(f"All translations saved to {final_translation_file}")
-
-
 
 
 def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, is_plain_text=False):
@@ -215,17 +219,24 @@ def copy_run_formatting(new_run, original_run):
         new_run.font.color.rgb = original_run.font.color.rgb
 
 def merge_error_free_chunks(final_doc, original_folder, error_free_folder):
-    for filename in sorted(os.listdir(original_folder)):
-        if filename.endswith(".docx"):
-            original_docx_file = os.path.join(original_folder, filename)
-            error_free_docx_file = os.path.join(error_free_folder, filename)
+    # List all .docx files in the original folder that match the pattern chunk_{i}.docx
+    files = [f for f in os.listdir(original_folder) if f.startswith("chunk_") and f.endswith(".docx")]
 
-            if os.path.exists(error_free_docx_file):
-                doc_to_append = Document(error_free_docx_file)
-                append_doc_to_another(final_doc, doc_to_append)
-            else:
-                doc_to_append = Document(original_docx_file)
-                append_doc_to_another(final_doc, doc_to_append)
+    # Sort files numerically by extracting the number after 'chunk_' and before '.docx'
+    files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
+
+    # Iterate over sorted files and merge the corresponding documents
+    for filename in files:
+        original_docx_file = os.path.join(original_folder, filename)
+        error_free_docx_file = os.path.join(error_free_folder, filename)
+
+        if os.path.exists(error_free_docx_file):
+            doc_to_append = Document(error_free_docx_file)
+            append_doc_to_another(final_doc, doc_to_append)
+        else:
+            doc_to_append = Document(original_docx_file)
+            append_doc_to_another(final_doc, doc_to_append)
+
 
 def append_doc_to_another(doc, doc_to_append):
     for element in iter_block_items(doc_to_append):
