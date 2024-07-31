@@ -90,71 +90,103 @@ def translate_texts():
             if response.status_code == 200:
                 response_data = response.json()
                 print("Response JSON:", response_data)
-                return response_data
+                token_count = response_data.get('usageMetadata', {}).get('totalTokenCount', 0)
+                return response_data, token_count
             else:
                 print(f"Error: {response.status_code} - {response.text}")
-                return None
+                return None, 0
+
+        def process_translation(prompt):
+            """Helper function to handle translation and retry if necessary."""
+            translation_response, tokens = call_gemini_api(prompt)
+            token_counts.append(tokens)  # Accumulate tokens
+
+            if translation_response and 'content' in translation_response['candidates'][0]:
+                return translation_response, tokens
+            else:
+                print("Retrying due to missing 'content' in response...")
+                # Retry once
+                translation_response, tokens = call_gemini_api(prompt)
+                token_counts.append(tokens)  # Accumulate tokens
+                if translation_response and 'content' in translation_response['candidates'][0]:
+                    return translation_response, tokens
+                else:
+                    print("Skipping this chunk due to repeated safety issue.")
+                    return None, tokens
 
         # Call the Gemini API for translation
-        translation_response = call_gemini_api(translation_prompt)
-        if translation_response:
-            # Extract the translated text from the response
-            translated_text = translation_response['candidates'][0]['content']['parts'][0]['text']
-            # Clean the translated text by removing any tags
-            translated_text = re.sub(r'<[^>]+>', '', translated_text).strip()
+        translation_response, tokens = process_translation(translation_prompt)
+        if not translation_response:
+            continue  # Skip this chunk if translation failed
 
-            # Save the translated text
-            save_text_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
+        # Extract the translated text from the response
+        translated_text = translation_response['candidates'][0]['content']['parts'][0]['text']
+        # Clean the translated text by removing any tags
+        translated_text = re.sub(r'<[^>]+>', '', translated_text).strip()
 
-            # Append the translated text to the final document
-            append_translation_to_docx(final_doc, translated_text, elements)
+        # Save the translated text
+        save_text_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
 
-            # Generate the error report prompt
-            error_report_prompt = create_error_report_prompt(source_lang, target_lang, country, elements, translated_text)
-            
-            # Call the Gemini API for the error report
-            error_report_response = call_gemini_api(error_report_prompt)
-            if error_report_response:
-                error_report_text = error_report_response['candidates'][0]['content']['parts'][0]['text']
-                save_text_to_docx(source_docx_file, error_report_text, elements, review_docx_file, is_plain_text=True)
+        # Append the translated text to the final document
+        append_translation_to_docx(final_doc, translated_text, elements)
 
-            # Generate the improvement prompt using translated chunk and review chunk
-            improvement_prompt = create_improvement_prompt(target_lang, country, translated_text, error_report_text)
-            
-            # Call the Gemini API for the improvement suggestion
-            improvement_response = call_gemini_api(improvement_prompt)
-            if improvement_response:
-                improvement_text = improvement_response['candidates'][0]['content']['parts'][0]['text']
-                improvement_text = re.sub(r'<[^>]+>', '', improvement_text).strip()  # Remove any tags
-                save_text_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file)
+        # Generate the error report prompt
+        error_report_prompt = create_error_report_prompt(source_lang, target_lang, country, elements, translated_text)
+        
+        # Call the Gemini API for the error report
+        error_report_response, tokens = process_translation(error_report_prompt)
+        if not error_report_response:
+            continue  # Skip if error report generation failed
 
-                # Generate the natural translation prompt based on the improved text
-                natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text)
-                
-                # Call the Gemini API for the natural translation
-                natural_translation_response = call_gemini_api(natural_translation_prompt)
-                if natural_translation_response:
-                    natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text']
-                    natural_translation_text = re.sub(r'<[^>]+>', '', natural_translation_text).strip()  # Remove any tags
-                    save_text_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file)
-                    
-                    # Generate the error-free translation prompt based on the natural translation
-                    error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text)
-                    
-                    # Call the Gemini API for the error-free translation
-                    error_free_translation_response = call_gemini_api(error_free_translation_prompt)
-                    if error_free_translation_response:
-                        error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text']
-                        error_free_translation_text = re.sub(r'<[^>]+>', '', error_free_translation_text).strip()  # Remove any tags
-                        save_text_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file)
+        error_report_text = error_report_response['candidates'][0]['content']['parts'][0]['text']
+        save_text_to_docx(source_docx_file, error_report_text, elements, review_docx_file, is_plain_text=True)
+
+        # Generate the improvement prompt using translated chunk and review chunk
+        improvement_prompt = create_improvement_prompt(target_lang, country, translated_text, error_report_text)
+        
+        # Call the Gemini API for the improvement suggestion
+        improvement_response, tokens = process_translation(improvement_prompt)
+        if not improvement_response:
+            continue  # Skip if improvement generation failed
+
+        improvement_text = improvement_response['candidates'][0]['content']['parts'][0]['text']
+        improvement_text = re.sub(r'<[^>]+>', '', improvement_text).strip()  # Remove any tags
+        save_text_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file)
+
+        # Generate the natural translation prompt based on the improved text
+        natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text)
+        
+        # Call the Gemini API for the natural translation
+        natural_translation_response, tokens = process_translation(natural_translation_prompt)
+        if not natural_translation_response:
+            continue  # Skip if natural translation generation failed
+
+        natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text']
+        natural_translation_text = re.sub(r'<[^>]+>', '', natural_translation_text).strip()  # Remove any tags
+        save_text_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file)
+        
+        # Generate the error-free translation prompt based on the natural translation
+        error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text)
+        
+        # Call the Gemini API for the error-free translation
+        error_free_translation_response, tokens = process_translation(error_free_translation_prompt)
+        if not error_free_translation_response:
+            continue  # Skip if error-free translation generation failed
+
+        error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text']
+        error_free_translation_text = re.sub(r'<[^>]+>', '', error_free_translation_text).strip()  # Remove any tags
+        save_text_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file)
 
     # After processing all files, merge error-free translations with original chunks
     merge_error_free_chunks(final_doc, source_folder, error_free_folder)
 
+    # Calculate and print the total number of tokens used
+    total_tokens_used = sum(token_counts)
+    print(f"Total tokens used: {total_tokens_used}")
+
     # Save the final merged document
     final_doc.save(final_translation_file)
     print(f"All translations saved to {final_translation_file}")
-
 
 def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, is_plain_text=False):
     paragraphs = text.split('\n')
