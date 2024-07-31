@@ -15,8 +15,8 @@ api_key = os.getenv("GEMINI_API_KEY")
 
 def translate_texts():
     # Define your input parameters
-    source_lang = "English"  # example: English
-    target_lang = "Traditional Chinese"  # example: Traditional Chinese
+    source_lang = "English"
+    target_lang = "Traditional Chinese"
     country = "Taiwan"
     source_folder = "original_chunks"
     destination_folder = "translated_chunks"
@@ -24,7 +24,7 @@ def translate_texts():
     improvement_folder = "improvement_chunks"
     natural_folder = "natural_translation_chunks"
     error_free_folder = "error_free_translation_chunks"
-    merged_docx_file = os.path.join(destination_folder, "translated.docx")
+    final_translation_file = "final_translation.docx"
 
     # Ensure the destination directories exist
     os.makedirs(destination_folder, exist_ok=True)
@@ -33,8 +33,8 @@ def translate_texts():
     os.makedirs(natural_folder, exist_ok=True)
     os.makedirs(error_free_folder, exist_ok=True)
 
-    # Create a new document for the merged translated content
-    merged_translated_doc = Document()
+    # Create a new document for the final merged content
+    final_doc = Document()
 
     # Iterate over all .docx files in the source folder
     for i, filename in enumerate(sorted(os.listdir(source_folder))):
@@ -54,10 +54,8 @@ def translate_texts():
             text_content = "".join(element[1] for element in elements).strip()
             if not text_content:
                 print(f"Skipping {source_docx_file} as it contains only line breaks or is empty.")
-                # Copy the original file to the translated_chunks folder
-                shutil.copy(source_docx_file, destination_docx_file)
-                # Append the original content to the merged document
-                append_original_to_docx(merged_translated_doc, source_docx_file)
+                # Append the original content to the final document
+                append_original_to_docx(final_doc, source_docx_file)
                 continue
 
             # Create the translation prompt
@@ -99,11 +97,11 @@ def translate_texts():
                 # Clean the translated text by removing any tags
                 translated_text = re.sub(r'<[^>]+>', '', translated_text).strip()
 
-                # Save each translated chunk to its own file
-                save_translation_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
+                # Save the translated text
+                save_text_to_docx(source_docx_file, translated_text, elements, destination_docx_file)
 
-                # Append the translated text to the merged document
-                append_translation_to_docx(merged_translated_doc, translated_text, elements)
+                # Append the translated text to the final document
+                append_translation_to_docx(final_doc, translated_text, elements)
 
                 # Generate the error report prompt
                 error_report_prompt = create_error_report_prompt(source_lang, target_lang, country, elements, translated_text)
@@ -112,7 +110,7 @@ def translate_texts():
                 error_report_response = call_gemini_api(error_report_prompt)
                 if error_report_response:
                     error_report_text = error_report_response['candidates'][0]['content']['parts'][0]['text']
-                    save_error_report_to_docx(error_report_text, review_docx_file)
+                    save_text_to_docx(source_docx_file, error_report_text, elements, review_docx_file, is_plain_text=True)
 
                 # Generate the improvement prompt using translated chunk and review chunk
                 improvement_prompt = create_improvement_prompt(target_lang, country, translated_text, error_report_text)
@@ -122,7 +120,7 @@ def translate_texts():
                 if improvement_response:
                     improvement_text = improvement_response['candidates'][0]['content']['parts'][0]['text']
                     improvement_text = re.sub(r'<[^>]+>', '', improvement_text).strip()  # Remove any tags
-                    save_improvement_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file)
+                    save_text_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file)
 
                     # Generate the natural translation prompt based on the improved text
                     natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text)
@@ -132,7 +130,7 @@ def translate_texts():
                     if natural_translation_response:
                         natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text']
                         natural_translation_text = re.sub(r'<[^>]+>', '', natural_translation_text).strip()  # Remove any tags
-                        save_natural_translation_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file)
+                        save_text_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file)
                         
                         # Generate the error-free translation prompt based on the natural translation
                         error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text)
@@ -142,83 +140,46 @@ def translate_texts():
                         if error_free_translation_response:
                             error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text']
                             error_free_translation_text = re.sub(r'<[^>]+>', '', error_free_translation_text).strip()  # Remove any tags
-                            save_error_free_translation_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file)
+                            save_text_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file)
 
-    # Save the merged translated document
-    merged_translated_doc.save(merged_docx_file)
-    print(f"All translations saved to {merged_docx_file}")
+    # After processing all files, merge error-free translations with original chunks
+    merge_error_free_chunks(final_doc, source_folder, error_free_folder)
 
-def save_translation_to_docx(source_docx_file, translated_text, elements, destination_docx_file):
-    translated_paragraphs = translated_text.split('\n')
+    # Save the final merged document
+    final_doc.save(final_translation_file)
+    print(f"All translations saved to {final_translation_file}")
+
+
+
+
+def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, is_plain_text=False):
+    paragraphs = text.split('\n')
     
-    # Create a new docx document for the translation
-    translated_doc = Document()
+    # Create a new docx document
+    doc = Document()
     
-    # Map translated text to the original elements structure
-    for element, translated_para in zip(elements, translated_paragraphs):
-        if element[0] == 'paragraph':
-            new_para = translated_doc.add_paragraph(style=element[2])
-            new_run = new_para.add_run(translated_para)
-            copy_run_formatting(new_run, element[3][0] if element[3] else None)
-        elif element[0] == 'cell':
-            new_table = translated_doc.add_table(rows=1, cols=1)
-            cell = new_table.cell(0, 0)
-            cell.text = translated_para
-            for run in element[3]:
-                new_run = cell.paragraphs[0].add_run(run.text)
-                copy_run_formatting(new_run, run)
+    # If saving plain text, directly add the paragraphs
+    if is_plain_text:
+        for paragraph in paragraphs:
+            doc.add_paragraph(paragraph)
+    else:
+        # Map text to the original elements structure
+        for element, para in zip(elements, paragraphs):
+            if element[0] == 'paragraph':
+                new_para = doc.add_paragraph(style=element[2])
+                new_run = new_para.add_run(para)
+                copy_run_formatting(new_run, element[3][0] if element[3] else None)
+            elif element[0] == 'cell':
+                new_table = doc.add_table(rows=1, cols=1)
+                cell = new_table.cell(0, 0)
+                cell.text = para
+                for run in element[3]:
+                    new_run = cell.paragraphs[0].add_run(run.text)
+                    copy_run_formatting(new_run, run)
 
-    # Save the translated document
-    translated_doc.save(destination_docx_file)
-    print(f"Translated chunk saved to {destination_docx_file}")
-
-def save_natural_translation_to_docx(source_docx_file, natural_translation_text, elements, natural_docx_file):
-    natural_paragraphs = natural_translation_text.split('\n')
-    
-    # Create a new docx document for the natural translation
-    natural_doc = Document()
-    
-    # Map natural translation text to the original elements structure
-    for element, natural_para in zip(elements, natural_paragraphs):
-        if element[0] == 'paragraph':
-            new_para = natural_doc.add_paragraph(style=element[2])
-            new_run = new_para.add_run(natural_para)
-            copy_run_formatting(new_run, element[3][0] if element[3] else None)
-        elif element[0] == 'cell':
-            new_table = natural_doc.add_table(rows=1, cols=1)
-            cell = new_table.cell(0, 0)
-            cell.text = natural_para
-            for run in element[3]:
-                new_run = cell.paragraphs[0].add_run(run.text)
-                copy_run_formatting(new_run, run)
-
-    # Save the natural translation document
-    natural_doc.save(natural_docx_file)
-    print(f"Natural translation saved to {natural_docx_file}")
-
-def save_error_free_translation_to_docx(source_docx_file, error_free_translation_text, elements, error_free_docx_file):
-    error_free_paragraphs = error_free_translation_text.split('\n')
-    
-    # Create a new docx document for the error-free translation
-    error_free_doc = Document()
-    
-    # Map error-free translation text to the original elements structure
-    for element, error_free_para in zip(elements, error_free_paragraphs):
-        if element[0] == 'paragraph':
-            new_para = error_free_doc.add_paragraph(style=element[2])
-            new_run = new_para.add_run(error_free_para)
-            copy_run_formatting(new_run, element[3][0] if element[3] else None)
-        elif element[0] == 'cell':
-            new_table = error_free_doc.add_table(rows=1, cols=1)
-            cell = new_table.cell(0, 0)
-            cell.text = error_free_para
-            for run in element[3]:
-                new_run = cell.paragraphs[0].add_run(run.text)
-                copy_run_formatting(new_run, run)
-
-    # Save the error-free document
-    error_free_doc.save(error_free_docx_file)
-    print(f"Error-free translation saved to {error_free_docx_file}")
+    # Save the document
+    doc.save(destination_docx_file)
+    print(f"Text saved to {destination_docx_file}")
 
 def append_translation_to_docx(merged_doc, translated_text, elements):
     translated_paragraphs = translated_text.split('\n')
@@ -245,36 +206,6 @@ def append_original_to_docx(merged_doc, source_docx_file):
             new_run = new_para.add_run(run.text)
             copy_run_formatting(new_run, run)
 
-def save_error_report_to_docx(error_report_text, review_docx_file):
-    review_doc = Document()
-    review_doc.add_paragraph(error_report_text)
-    review_doc.save(review_docx_file)
-    print(f"Error report saved to {review_docx_file}")
-
-def save_improvement_to_docx(source_docx_file, improvement_text, elements, improvement_docx_file):
-    improvement_paragraphs = improvement_text.split('\n')
-    
-    # Create a new docx document for the improvement
-    improvement_doc = Document()
-    
-    # Map improvement text to the original elements structure
-    for element, improvement_para in zip(elements, improvement_paragraphs):
-        if element[0] == 'paragraph':
-            new_para = improvement_doc.add_paragraph(style=element[2])
-            new_run = new_para.add_run(improvement_para)
-            copy_run_formatting(new_run, element[3][0] if element[3] else None)
-        elif element[0] == 'cell':
-            new_table = improvement_doc.add_table(rows=1, cols=1)
-            cell = new_table.cell(0, 0)
-            cell.text = improvement_para
-            for run in element[3]:
-                new_run = cell.paragraphs[0].add_run(run.text)
-                copy_run_formatting(new_run, run)
-
-    # Save the improved document
-    improvement_doc.save(improvement_docx_file)
-    print(f"Improvement suggestions saved to {improvement_docx_file}")
-
 def copy_run_formatting(new_run, original_run):
     if original_run:
         new_run.bold = original_run.bold
@@ -282,6 +213,52 @@ def copy_run_formatting(new_run, original_run):
         new_run.underline = original_run.underline
         new_run.font.size = original_run.font.size
         new_run.font.color.rgb = original_run.font.color.rgb
+
+def merge_error_free_chunks(final_doc, original_folder, error_free_folder):
+    for filename in sorted(os.listdir(original_folder)):
+        if filename.endswith(".docx"):
+            original_docx_file = os.path.join(original_folder, filename)
+            error_free_docx_file = os.path.join(error_free_folder, filename)
+
+            if os.path.exists(error_free_docx_file):
+                doc_to_append = Document(error_free_docx_file)
+                append_doc_to_another(final_doc, doc_to_append)
+            else:
+                doc_to_append = Document(original_docx_file)
+                append_doc_to_another(final_doc, doc_to_append)
+
+def append_doc_to_another(doc, doc_to_append):
+    for element in iter_block_items(doc_to_append):
+        if isinstance(element, docx.text.paragraph.Paragraph):
+            new_para = doc.add_paragraph(style=element.style)
+            for run in element.runs:
+                new_run = new_para.add_run(run.text)
+                copy_run_formatting(new_run, run)
+        elif isinstance(element, docx.table.Table):
+            new_table = doc.add_table(rows=0, cols=len(element.columns))
+            for row in element.rows:
+                new_row = new_table.add_row()
+                for i, cell in enumerate(row.cells):
+                    new_cell = new_row.cells[i]
+                    for paragraph in cell.paragraphs:
+                        new_para = new_cell.add_paragraph(style=paragraph.style)
+                        for run in paragraph.runs:
+                            new_run = new_para.add_run(run.text)
+                            copy_run_formatting(new_run, run)
+
+def iter_block_items(parent):
+    if isinstance(parent, docx.document.Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, docx.table._Cell):
+        parent_elm = parent._element
+    else:
+        raise ValueError("Unknown parent type")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, docx.oxml.CT_P):
+            yield docx.text.paragraph.Paragraph(child, parent)
+        elif isinstance(child, docx.oxml.CT_Tbl):
+            yield docx.table.Table(child, parent)
 
 if __name__ == "__main__":
     translate_texts()
