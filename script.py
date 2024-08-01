@@ -142,7 +142,7 @@ def translate_texts():
         save_text_to_docx(source_docx_file, error_report_text, elements, review_docx_file, is_plain_text=True)
 
         # Generate the improvement prompt using translated chunk and review chunk
-        improvement_prompt = create_improvement_prompt(target_lang, country, translated_text, error_report_text)
+        improvement_prompt = create_improvement_prompt(source_lang, target_lang, country, translated_text, error_report_text)
         
         # Call the Gemini API for the improvement suggestion
         improvement_response, tokens = process_translation(improvement_prompt)
