@@ -60,8 +60,6 @@ def translate_texts():
         text_content = "".join(element[1] for element in elements).strip()
         if not text_content:
             print(f"Skipping {source_docx_file} as it contains only line breaks or is empty.")
-            # Append the original content to the final document
-            append_original_to_docx(final_doc, source_docx_file)
             continue
 
         # Create the translation prompt

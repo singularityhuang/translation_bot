@@ -30,15 +30,9 @@ def iter_block_items(parent):
 # Function to return translation guidelines
 def get_translation_guidelines(target_lang, country):
     return f"""
-1. **Accuracy**: Accuracy is paramount. Your translation MUST convey the correct meaning of the source text. This is the most critical aspect and takes precedence over all other considerations, including style, tone, and format. Avoid any errors such as duplications, mistranslations, omissions, or untranslated text.
-2. **Linguistically Correct**:
-   - **Grammar**: Follow proper sentence structure, verb tense, and overall grammatical correctness according to {target_lang} conventions.
-   - **Spelling**: Adhere to the correct spelling as per {target_lang} standards.
-   - **Punctuation**: Use punctuation correctly in accordance with {target_lang} norms, recognizing that different languages may have unique punctuation rules.
-3. **Stylistically Consistent**:
-   - **Tone and Formality**: Match the tone, formality, and style of the source text.
-   - **Genre Appropriateness**: Adjust the translation style according to the genre, whether it's factual, descriptive, or technical.
-4. **Culturally and Regionally Appropriate**: Align the translation with the cultural and regional norms specific to {country}. For example, in Traditional Chinese with zh-TW locale, "disabled" should be translated as "殘障人士" instead of "殘疾人".
+1. **Style Consistency**: Ensure the style matches the original text. Consider the cultural and stylistic nuances of {target_lang} as spoken in {country}. For example, a news article should read like a news article in {target_lang}.
+2. **Avoid Errors**: Prevent mistranslations, omissions, or untranslated text.
+3. **Accuracy Above All**: Accuracy is paramount. Your translation must convey the correct meaning, taking precedence over all other considerations.
 """
 
 
@@ -61,21 +55,18 @@ def create_translation_prompt(source_lang, target_lang, country, elements):
     translation_prompt += "</SOURCE_TEXT>"
     return translation_prompt
 
-# Function to define error categories for reviewing translations
 def get_error_categories(target_lang, country):
     return f"""
 ### Error Categories:
-1. **Accuracy Issues**: Look for any errors such as duplication, mistranslation, omission, or untranslated text that compromise the correctness of the translation.
+1. **Accuracy Issues**: 
+   - Any duplication, mistranslation, omission, or untranslated text errors that make the translation incorrect.
 2. **Language Quality and Punctuation**:
-   - **Grammar**: Identify issues related to sentence structure, verb tense, and overall grammatical correctness.
-   - **Spelling**: Ensure that all words are spelled correctly according to the conventions of {target_lang}.
-   - **Punctuation**: Check that punctuation is used correctly and conforms to the conventions of {target_lang}. Different languages may have unique punctuation rules that should be followed.
+   - Any grammar, spelling, or punctuation errors that make the translation hard to read. Ensure that all words are spelled correctly according to the conventions of {target_lang} and that punctuation conforms to {target_lang} norms.
 3. **Style Consistency**:
-   - **Definition**: "Style" refers to the overall tone, formality, and structure of the text. It includes the choice of words, sentence structure, and the way ideas are presented to suit a specific genre or context.
-   - **Examples**: A *news article* might be direct and factual, *literature* might be more descriptive and nuanced, and a *technical document* should be precise and clear.
-   - **Task**: Check for mismatches in style between the source and target texts. The translation should mirror the tone and style of the source text in {target_lang}.
-4. **Cultural and Regional Appropriateness**: Ensure that the translation adheres to the writing or speaking conventions specific to {country}. For example, in 繁體中文, "disabled" should be translated as "殘障人士" instead of "殘疾人".
-"""
+   - Any mismatch in the style (e.g., news article, court case, literature, casual conversation, financial report, technology essay, etc.) that makes the translation seem unnatural or inappropriate. For example, if the source text is a news article, the translation should read like a news article in {target_lang}. Otherwise, point this out as an error.
+4. **Cultural and Regional Appropriateness**:
+   - Any mismatch in writing or speaking conventions specific to {country}. For example, in trditional Chinese with zh-TW locale, "disabled" should be translated as "殘障人士" instead of "殘疾人".
+    """
 
 # Function to define the error report format for reviewing translations
 def get_error_report_format(source_lang, target_lang):
@@ -92,17 +83,9 @@ def get_error_report_format(source_lang, target_lang):
 
 ### Attribute Explanations:
 
-- **Original** (attribute):
-   - **Definition**: The `original` attribute holds the exact sentence or phrase as it appears in the source text. This text is taken directly from the document or material written in the source language ({source_lang}).
-   - **Purpose**: This attribute serves as a reference point for comparison with the translated text. It is used to identify and review the corresponding translation for accuracy and consistency.
-
-- **Translated** (attribute):
-   - **Definition**: The `translated` attribute contains the corresponding sentence or phrase from the translated text. This is the version that has been translated from the source language into the target language ({target_lang}).
-   - **Purpose**: This attribute is the primary focus of the review process. It is compared against the `original` attribute to ensure that the translation accurately reflects the meaning, style, and nuances of the source text.
-
-- **Errors** (attribute):
-   - **Definition**: The `errors` attribute provides a description of specific issues or inaccuracies identified in the `translated` sentence. This may include problems such as mistranslations, omissions, grammatical mistakes, stylistic inconsistencies, or cultural inaccuracies.
-   - **Purpose**: The purpose of this attribute is to document any deviations from the expected quality or accuracy in the translation. It helps reviewers pinpoint exactly what is wrong with the translation so that appropriate corrections can be made. The focus is strictly on identifying the errors without suggesting corrections, and each error description should be concise (up to 30 words).
+- **original**: The sentence in {source_lang}.
+- **translated**: The translation of the original sentence in {target_lang}.
+- **errors**: The errors identified by experts in the translated sentence. Point out the errors only; do not provide corrected sentences. Each description should be less than 30 words.
 """
 
 # Usage example in a larger prompt
@@ -120,7 +103,7 @@ def create_error_report_prompt(source_lang, target_lang, country, elements, tran
     ### Error Report Format:
     {get_error_report_format(source_lang, target_lang)}
 
-    Ensure that you identify at least one error. Output only the error report in the specified format and nothing else.
+    Output only the error report in the specified format and nothing else.
 
     <SOURCE_TEXT>
     """
@@ -141,10 +124,11 @@ def create_improvement_prompt(source_lang, target_lang, country, translated_text
 
     Your task is to:
 
-    1. Identify all the problematic sentences in the translation provided within <TRANSLATION></TRANSLATION>.
-    2. Correct the identified errors according to the descriptions in the "errors" attribute of each object in the error report.
-    3. Provide an improved translation that addresses and corrects all listed errors.
-    4. Ensure the improved translation adheres to the following guidelines:
+    - Identify all the problematic translated sentences in the translation provided within <TRANSLATION></TRANSLATION>.
+    - Correct the "errors" in these sentences.
+    - Provide an improved translation that ensures the text is free from these errors.
+    - Maintain the same style: For example, if the source text is a news article, the translation should read like a news article in {target_lang}.
+    - Use the appropriate writing or speaking conventions for {country}: For example, in 繁體中文, "disabled" should be "殘障人士" instead of "殘疾人".
 
     ### Translation Guidelines:
     {get_translation_guidelines(target_lang, country)}
@@ -166,9 +150,10 @@ def create_natural_translation_prompt(target_lang, country, improved_translation
     natural_translation_prompt = f"""
     You are a writer and editor at a translation agency fluent in {target_lang}. Your task is to:
 
-    1. Carefully read the following translation text within <TRANSLATION></TRANSLATION>.
-    2. Paraphrase any paragraph or section as needed so that the edited translation sounds natural and native in {target_lang}.
-    3. Ensure that the edited translation maintains the same meaning as the original translation. Do not alter the intended meaning or introduce new information.
+    1. Carefully review the translation text provided between <TRANSLATION></TRANSLATION>.
+    2. Paraphrase any paragraph or section as needed to ensure the translation sounds natural and native.
+    3. Maintain the original style: For example, if the source text is a news article, the translation should read like a news article in {{target_lang}}.
+    4. Adhere to the writing and speaking conventions used in {country}: For example, in Traditional Chinese with zh-TW locale, "disabled" should be rendered as "殘障人士" rather than "殘疾人".
     4. Pay special attention to the natural grammatical structure in {target_lang}. For example, in Chinese, it's common to use shorter sentences with fewer subordinate clauses compared to English or other languages. Adjust sentence structure accordingly to reflect the natural flow of {target_lang}.
 
     Output only the edited translation and nothing else.
@@ -185,14 +170,12 @@ def create_error_free_translation_prompt(target_lang, country, natural_translati
 
     Please follow these guidelines:
 
-    1. Carefully read the translation text provided within <TRANSLATION></TRANSLATION>.
-    2. Do not paraphrase or rephrase any sentences; focus solely on correcting errors.
-    3. Correct any of the following errors:
-       - Duplication or omission of content.
-       - Grammar errors, including verb tense, sentence structure, and subject-verb agreement.
-       - Spelling mistakes according to {target_lang} standards.
-       - Punctuation errors, ensuring the correct use of punctuation marks as per {target_lang} conventions.
-    4. Ensure the translation uses appropriate wording and conforms to the cultural and linguistic norms of {country}. For example, in 繁體中文, "disabled" should be translated as "殘障人士" instead of "殘疾人".
+    1. Carefully review the translation text provided within <TRANSLATION></TRANSLATION>.
+    2. Do not paraphrase any sentences.
+    3. Avoid the following errors:
+        - Duplication or omission errors.
+        - Spelling or punctuation errors, including incorrect punctuation marks according to {target_lang} conventions.    Ensure the translation follows the writing and speaking conventions in {{country}} or the intended target region. For example, in 繁體中文, "disabled" should be translated as "殘障人士" instead of "殘疾人".
+    4. Ensure the translation uses appropriate wording and conforms to the cultural and linguistic norms of {country}. For example, in Traditional Chinese with zh-TW locale, "disabled" should be translated as "殘障人士" instead of "殘疾人".
 
     Output only the edited, error-free translation and nothing else.
 
