@@ -1,4 +1,6 @@
 import docx
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tc
 
 def extract_text_with_structure(docx_file):
     doc = docx.Document(docx_file)
@@ -6,26 +8,35 @@ def extract_text_with_structure(docx_file):
 
     for block in iter_block_items(doc):
         if isinstance(block, docx.text.paragraph.Paragraph):
-            elements.append(('paragraph', block.text, block.style, block.runs))
+            elements.append(('paragraph', get_full_text_from_paragraph(block), block.style, block.runs))
         elif isinstance(block, docx.table._Cell):
             for paragraph in block.paragraphs:
-                elements.append(('cell', paragraph.text, paragraph.style, paragraph.runs))
+                elements.append(('cell', get_full_text_from_paragraph(paragraph), paragraph.style, paragraph.runs))
 
     return elements
 
 def iter_block_items(parent):
-    if isinstance(parent, docx.document.Document):
-        parent_elm = parent.element.body
-    elif isinstance(parent, docx.table._Cell):
-        parent_elm = parent._element
-    else:
-        raise ValueError("Unknown parent type")
-
+    """
+    Yield each block item from a parent, allowing for paragraphs and table cells.
+    """
+    parent_elm = parent.element.body if isinstance(parent, docx.document.Document) else parent._element
     for child in parent_elm.iterchildren():
-        if isinstance(child, docx.oxml.CT_P):
+        if isinstance(child, CT_P):
             yield docx.text.paragraph.Paragraph(child, parent)
-        elif isinstance(child, docx.oxml.CT_Tc):
-            yield docx.table._Cell(child, parent)
+        elif isinstance(child, CT_Tc):
+            for cell in docx.table._Cell(child, parent).tables:
+                for row in cell.rows:
+                    for table_cell in row.cells:
+                        yield table_cell
+
+def get_full_text_from_paragraph(paragraph):
+    """
+    Concatenate text from all runs in a paragraph to maintain formatting and avoid extra line breaks.
+    """
+    full_text = ""
+    for run in paragraph.runs:
+        full_text += run.text
+    return full_text
 
 # Function to return translation guidelines
 def get_translation_guidelines(target_lang, country):
@@ -50,7 +61,7 @@ def create_translation_prompt(source_lang, target_lang, country, elements):
     <SOURCE_TEXT>
     """
     for element in elements:
-        translation_prompt += f"{element[1]}\n"
+        translation_prompt += f"{element[1]} "
     
     translation_prompt += "</SOURCE_TEXT>"
     return translation_prompt
@@ -109,7 +120,7 @@ def create_error_report_prompt(source_lang, target_lang, country, elements, tran
     """
     # Append the source text elements to the prompt
     for element in elements:
-        error_report_prompt += f"{element[1]}\n"
+        error_report_prompt += f"{element[1]} "
 
     error_report_prompt += f"</SOURCE_TEXT>\n\n<TRANSLATION>\n{translated_text}\n</TRANSLATION>"
 
@@ -146,17 +157,13 @@ def create_improvement_prompt(source_lang, target_lang, country, translated_text
 
     return improvement_prompt
 
-def create_natural_translation_prompt(target_lang, country, improved_translation):
+def create_natural_translation_prompt(target_lang, country, improved_translation, writer):
     natural_translation_prompt = f"""
-    You are a writer and editor at a translation agency fluent in {target_lang}. Your task is to:
+    You are a skilled writer and editor at a translation agency, fluent in {target_lang}. Your task is to:
 
-    1. Carefully review the translation text provided between <TRANSLATION></TRANSLATION>.
-    2. Paraphrase any paragraph or section as needed to ensure the translation sounds natural and native.
-    3. Maintain the original style: For example, if the source text is a news article, the translation should read like a news article in {{target_lang}}.
-    4. Adhere to the writing and speaking conventions used in {country}: For example, in Traditional Chinese with zh-TW locale, "disabled" should be rendered as "殘障人士" rather than "殘疾人".
-    4. Pay special attention to the natural grammatical structure in {target_lang}. For example, in Chinese, it's common to use shorter sentences with fewer subordinate clauses compared to English or other languages. Adjust sentence structure accordingly to reflect the natural flow of {target_lang}.
+    Refine the following translation by infusing the style of {writer}, a renowned 20th-century {target_lang} writer from {country}. The text need to be in {country} locale.
 
-    Output only the edited translation and nothing else.
+    Provide only the edited translation, maintaining the essence and tone of the original text, but with the distinct stylistic nuances of {writer}. 
 
     <TRANSLATION>
     {improved_translation}
@@ -164,20 +171,13 @@ def create_natural_translation_prompt(target_lang, country, improved_translation
     """
     return natural_translation_prompt
 
-def create_error_free_translation_prompt(target_lang, country, natural_translation):
+def create_error_free_translation_prompt(target_lang, country, natural_translation, writer):
     error_free_translation_prompt = f"""
-    You are a writer and editor at a translation agency fluent in {target_lang}. Your task is to review the following translation for any remaining errors and ensure it adheres to conventional wording in {country}. 
+    The following translation has been crafted in the style of {writer}, a famous 20th-century {target_lang} writer from {country}. Your task is to:
 
-    Please follow these guidelines:
+    Correct any grammatical, syntactical, or contextual errors while preserving the distinctive style of {writer}.
 
-    1. Carefully review the translation text provided within <TRANSLATION></TRANSLATION>.
-    2. Do not paraphrase any sentences.
-    3. Avoid the following errors:
-        - Duplication or omission errors.
-        - Spelling or punctuation errors, including incorrect punctuation marks according to {target_lang} conventions.    Ensure the translation follows the writing and speaking conventions in {{country}} or the intended target region. For example, in 繁體中文, "disabled" should be translated as "殘障人士" instead of "殘疾人".
-    4. Ensure the translation uses appropriate wording and conforms to the cultural and linguistic norms of {country}. For example, in Traditional Chinese with zh-TW locale, "disabled" should be translated as "殘障人士" instead of "殘疾人".
-
-    Output only the edited, error-free translation and nothing else.
+    Provide only the edited, error-free translation, ensuring the original tone and style remain intact.
 
     <TRANSLATION>
     {natural_translation}

@@ -195,6 +195,7 @@ def translate_texts():
     source_lang = "English"
     target_lang = "Traditional Chinese"
     country = "Taiwan"
+    writer = "張愛玲"
     source_folder = "original_chunks"
     final_translation_file = "final_translation.docx"
 
@@ -288,16 +289,16 @@ def translate_texts():
                     improvement_text = improvement_response['candidates'][0]['content']['parts'][0]['text']
                     improvement_text = re.sub(r'<[^>]+>', '', improvement_text).strip()
 
-                    natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text)
+                    natural_translation_prompt = create_natural_translation_prompt(target_lang, country, improvement_text, writer)
                     natural_translation_response, tokens = process_translation(natural_translation_prompt)
                     if natural_translation_response:
-                        natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text']
+                        natural_translation_text = natural_translation_response['candidates'][0]['content']['parts'][0]['text'].replace('\n\n','')
                         natural_translation_text = re.sub(r'<[^>]+>', '', natural_translation_text).strip()
 
-                        error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text)
+                        error_free_translation_prompt = create_error_free_translation_prompt(target_lang, country, natural_translation_text, writer)
                         error_free_translation_response, tokens = process_translation(error_free_translation_prompt)
                         if error_free_translation_response:
-                            error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text']
+                            error_free_translation_text = error_free_translation_response['candidates'][0]['content']['parts'][0]['text'].replace('\n\n','')
                             error_free_translation_text = re.sub(r'<[^>]+>', '', error_free_translation_text).strip()
 
                             # Append the final error-free translation to the final document
@@ -319,9 +320,12 @@ def translate_texts():
 
 
 
-
 def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, is_plain_text=False):
-    paragraphs = text.split('\n')
+    # Replace \n\n with '' within the text to keep paragraphs intact
+    cleaned_text = text.replace('\n\n', '')
+
+    # Split text by single newline for processing
+    paragraphs = cleaned_text.split('\n')
     
     # Create a new docx document
     doc = Document()
@@ -349,6 +353,14 @@ def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, i
     doc.save(destination_docx_file)
     print(f"Text saved to {destination_docx_file}")
 
+def copy_run_formatting(new_run, original_run):
+    if original_run:
+        new_run.bold = original_run.bold
+        new_run.italic = original_run.italic
+        new_run.underline = original_run.underline
+        new_run.font.size = original_run.font.size
+        new_run.font.color.rgb = original_run.font.color.rgb
+
 def append_translation_to_docx(merged_doc, translated_text, elements):
     translated_paragraphs = translated_text.split('\n')
 
@@ -374,13 +386,6 @@ def append_original_to_docx(merged_doc, source_docx_file):
             new_run = new_para.add_run(run.text)
             copy_run_formatting(new_run, run)
 
-def copy_run_formatting(new_run, original_run):
-    if original_run:
-        new_run.bold = original_run.bold
-        new_run.italic = original_run.italic
-        new_run.underline = original_run.underline
-        new_run.font.size = original_run.font.size
-        new_run.font.color.rgb = original_run.font.color.rgb
 
 def merge_error_free_chunks(final_doc, original_folder, error_free_folder):
     # List all .docx files in the original folder that match the pattern chunk_{i}.docx
