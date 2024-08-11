@@ -8,6 +8,15 @@ import shutil
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from translate_prompt import extract_text_with_structure, create_translation_prompt, create_error_report_prompt, create_improvement_prompt, create_natural_translation_prompt, create_error_free_translation_prompt
+import firebase_admin
+from firebase_admin import credentials, storage
+from datetime import timedelta
+
+# Initialize Firebase Admin SDK
+cred = credentials.Certificate('firebase-adminsdk.json')
+firebase_admin.initialize_app(cred, {
+    'storageBucket': 'tomato-4836e.appspot.com'
+})
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -49,6 +58,23 @@ def chunk_docx_by_paragraphs(input_file, output_dir):
         chunk_index += 1
 
     return output_files
+
+
+def upload_to_firebase_storage(local_file_path, storage_path):
+    """Uploads a file to Firebase Storage and returns its public URL."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+    blob.upload_from_filename(local_file_path)
+    print(f"File {local_file_path} uploaded to {storage_path}.")
+    # Make the file publicly accessible and get the public URL
+    blob.make_public()
+    return blob.public_url
+
+def get_signed_url(storage_path):
+    """Generates a signed download URL for a file in Firebase Storage."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+    return blob.generate_signed_url(timedelta(seconds=300))
 
 # Translation Function
 def translate_texts(source_lang, target_lang, country, writer):
@@ -157,7 +183,12 @@ def translate_texts(source_lang, target_lang, country, writer):
     final_doc.save(final_translation_file)
     print(f"All translations saved to {final_translation_file}")
 
-    return final_translation_file, total_tokens_used
+    # Upload the file to Firebase Storage
+    public_url = upload_to_firebase_storage(final_translation_file, final_translation_file)
+    # Alternatively, use a signed URL:
+    # signed_url = get_signed_url(final_translation_file)
+
+    return final_translation_file, total_tokens_used, public_url  # or return signed_url
 
 # Flask Route for Translation API
 @app.route('/translate', methods=['POST'])
@@ -189,12 +220,13 @@ def translate():
         chunk_docx_by_paragraphs(input_file_path, output_dir)
 
         # Step 2: Translate the chunked files
-        final_translation_file, total_tokens_used = translate_texts(source_lang, target_lang, country, writer)
+        final_translation_file, total_tokens_used, download_url = translate_texts(source_lang, target_lang, country, writer)
 
         return jsonify({
             'status': 'success',
             'final_translation_file': final_translation_file,
-            'total_tokens_used': total_tokens_used
+            'total_tokens_used': total_tokens_used,
+            'download_url': download_url  # Include the download URL in the response
         })
 
     return jsonify({"error": "File not allowed"}), 400
