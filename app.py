@@ -3,8 +3,8 @@ import requests
 from dotenv import load_dotenv
 import docx
 from docx import Document
-import argparse
 import re
+import shutil
 from flask import Flask, request, jsonify
 from translate_prompt import extract_text_with_structure, create_translation_prompt, create_error_report_prompt, create_improvement_prompt, create_natural_translation_prompt, create_error_free_translation_prompt
 
@@ -16,13 +16,36 @@ api_key = os.getenv("GEMINI_API_KEY")
 
 app = Flask(__name__)
 
+# Chunking Function
+def chunk_docx_by_paragraphs(input_file, output_dir):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    else:
+        shutil.rmtree(output_dir)  # Clear the directory if it exists
+        os.makedirs(output_dir)
+
+    doc = Document(input_file)
+    chunk_index = 0
+    output_files = []
+
+    for paragraph in doc.paragraphs:
+        new_doc = Document()
+        new_doc.add_paragraph(paragraph.text)
+
+        output_file = os.path.join(output_dir, f"chunk_{chunk_index}.docx")
+        new_doc.save(output_file)
+        output_files.append(output_file)
+        print(f"Saved chunk {chunk_index} successfully.")
+        chunk_index += 1
+
+    return output_files
+
+# Translation Function
 def translate_texts(source_lang, target_lang, country, writer):
-    # Initialize variables
     token_counts = []
     total_tokens_used = 0
     source_folder = "original_chunks"
     final_translation_file = "final_translation.docx"
-
     final_doc = Document()
 
     files = [f for f in os.listdir(source_folder) if f.startswith("chunk_") and f.endswith(".docx")]
@@ -33,7 +56,6 @@ def translate_texts(source_lang, target_lang, country, writer):
         print(f"Processing {source_docx_file}")
 
         elements = extract_text_with_structure(source_docx_file)
-
         text_content = "".join(element[1] for element in elements).strip()
         if not text_content:
             print(f"Original content for {source_docx_file} contains only line breaks or is empty.")
@@ -127,6 +149,7 @@ def translate_texts(source_lang, target_lang, country, writer):
 
     return final_translation_file, total_tokens_used
 
+# Flask Route for Translation API
 @app.route('/translate', methods=['POST'])
 def translate():
     data = request.json
@@ -134,7 +157,14 @@ def translate():
     target_lang = data.get('target_lang', 'Traditional Chinese')
     country = data.get('country', 'Taiwan')
     writer = data.get('writer', '龍應台')
+    
+    input_file = data.get('input_file', 'large_document.docx')
+    output_dir = 'original_chunks'
 
+    # Step 1: Chunk the document by paragraphs, where each chunk is a single paragraph
+    chunk_docx_by_paragraphs(input_file, output_dir)
+
+    # Step 2: Translate the chunked files
     final_translation_file, total_tokens_used = translate_texts(source_lang, target_lang, country, writer)
 
     return jsonify({
@@ -143,6 +173,7 @@ def translate():
         'total_tokens_used': total_tokens_used
     })
 
+# Helper Functions
 def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, is_plain_text=False):
     cleaned_text = text.replace('\n\n', '')
     paragraphs = cleaned_text.split('\n')
@@ -198,21 +229,6 @@ def append_original_to_docx(merged_doc, source_docx_file):
         for run in paragraph.runs:
             new_run = new_para.add_run(run.text)
             copy_run_formatting(new_run, run)
-
-def merge_error_free_chunks(final_doc, original_folder, error_free_folder):
-    files = [f for f in os.listdir(original_folder) if f.startswith("chunk_") and f.endswith(".docx")]
-    files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
-
-    for filename in files:
-        original_docx_file = os.path.join(original_folder, filename)
-        error_free_docx_file = os.path.join(error_free_folder, filename)
-
-        if os.path.exists(error_free_docx_file):
-            doc_to_append = Document(error_free_docx_file)
-            append_doc_to_another(final_doc, doc_to_append)
-        else:
-            doc_to_append = Document(original_docx_file)
-            append_doc_to_another(final_doc, doc_to_append)
 
 def append_doc_to_another(doc, doc_to_append):
     for element in iter_block_items(doc_to_append):
