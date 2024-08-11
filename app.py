@@ -6,15 +6,25 @@ from docx import Document
 import re
 import shutil
 from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename
 from translate_prompt import extract_text_with_structure, create_translation_prompt, create_error_report_prompt, create_improvement_prompt, create_natural_translation_prompt, create_error_free_translation_prompt
 
 # Load environment variables from the .env file
 load_dotenv()
-
+# Accessing the environment variables
+flask_env = os.getenv("FLASK_ENV")
+secret_key = os.getenv("SECRET_KEY")
 # Retrieve the API key from the environment variables
 api_key = os.getenv("GEMINI_API_KEY")
 
 app = Flask(__name__)
+app.config['ENV'] = flask_env
+app.config['SECRET_KEY'] = secret_key
+# Define the allowed file extensions
+ALLOWED_EXTENSIONS = {'docx'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Chunking Function
 def chunk_docx_by_paragraphs(input_file, output_dir):
@@ -152,26 +162,42 @@ def translate_texts(source_lang, target_lang, country, writer):
 # Flask Route for Translation API
 @app.route('/translate', methods=['POST'])
 def translate():
-    data = request.json
-    source_lang = data.get('source_lang', 'English')
-    target_lang = data.get('target_lang', 'Traditional Chinese')
-    country = data.get('country', 'Taiwan')
-    writer = data.get('writer', '龍應台')
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+
+    file = request.files['file']
     
-    input_file = data.get('input_file', 'large_document.docx')
-    output_dir = 'original_chunks'
+    if file.filename == '':
+        return jsonify({"error": "No file selected for uploading"}), 400
 
-    # Step 1: Chunk the document by paragraphs, where each chunk is a single paragraph
-    chunk_docx_by_paragraphs(input_file, output_dir)
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        input_file_path = os.path.join(os.getcwd(), filename)
+        file.save(input_file_path)
+        print(f"File {filename} uploaded successfully.")
 
-    # Step 2: Translate the chunked files
-    final_translation_file, total_tokens_used = translate_texts(source_lang, target_lang, country, writer)
+        # Process the file for chunking and translation
+        source_lang = request.form.get('source_lang', 'English')
+        target_lang = request.form.get('target_lang', 'Traditional Chinese')
+        country = request.form.get('country', 'Taiwan')
+        writer = request.form.get('writer', '龍應台')
 
-    return jsonify({
-        'status': 'success',
-        'final_translation_file': final_translation_file,
-        'total_tokens_used': total_tokens_used
-    })
+        output_dir = 'original_chunks'
+
+        # Step 1: Chunk the document by paragraphs, where each chunk is a single paragraph
+        chunk_docx_by_paragraphs(input_file_path, output_dir)
+
+        # Step 2: Translate the chunked files
+        final_translation_file, total_tokens_used = translate_texts(source_lang, target_lang, country, writer)
+
+        return jsonify({
+            'status': 'success',
+            'final_translation_file': final_translation_file,
+            'total_tokens_used': total_tokens_used
+        })
+
+    return jsonify({"error": "File not allowed"}), 400
 
 # Helper Functions
 def save_text_to_docx(source_docx_file, text, elements, destination_docx_file, is_plain_text=False):
@@ -264,4 +290,4 @@ def iter_block_items(parent):
             yield docx.table.Table(child, parent)
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=8080, debug=True)
