@@ -195,7 +195,7 @@ def translate_texts():
     source_lang = "English"
     target_lang = "Traditional Chinese"
     country = "Taiwan"
-    writer = "張愛玲"
+    writer = "龍應台"
     source_folder = "original_chunks"
     final_translation_file = "final_translation.docx"
 

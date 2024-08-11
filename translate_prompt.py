@@ -157,11 +157,42 @@ def create_improvement_prompt(source_lang, target_lang, country, translated_text
 
     return improvement_prompt
 
+# Array of objects containing language-specific additional notes
+notes = [
+    {"target_lang": "English", "additional_note": "and adhere to the Chicago Manual of Style"},
+    {"target_lang": "French", "additional_note": "and follow the guidelines of the Académie française"},
+    {"target_lang": "Spanish", "additional_note": "and adhere to the rules of the Real Academia Española"},
+    {"target_lang": "German", "additional_note": "and follow the Duden guidelines for spelling and grammar"},
+    {"target_lang": "Italian", "additional_note": "and follow the Accademia della Crusca recommendations"},
+    {"target_lang": "Portuguese", "additional_note": "and adhere to the guidelines of the Novo Acordo Ortográfico"},
+    {"target_lang": "Russian", "additional_note": "and follow the rules of the Russian Academy of Sciences"},
+    {"target_lang": "Japanese", "additional_note": "and adhere to the standards of the Japanese Language Council"},
+    {"target_lang": "Korean", "additional_note": "and follow the guidelines of the National Institute of the Korean Language"},
+    {"target_lang": "Arabic", "additional_note": "and adhere to the rules of the Arabic Language Academy"},
+    {"target_lang": "Dutch", "additional_note": "and follow the Taalunie guidelines for Dutch spelling and grammar"},
+    {"target_lang": "Swedish", "additional_note": "and adhere to the guidelines of Svenska Akademiens ordlista"},
+    {"target_lang": "Danish", "additional_note": "and follow the guidelines of Dansk Sprognævn"},
+    {"target_lang": "Norwegian", "additional_note": "and adhere to the rules of Språkrådet for Bokmål and Nynorsk"},
+    {"target_lang": "Finnish", "additional_note": "and follow the guidelines of the Institute for the Languages of Finland"},
+    {"target_lang": "Polish", "additional_note": "and adhere to the Polish Language Council's recommendations"},
+    {"target_lang": "Turkish", "additional_note": "and follow the guidelines of the Turkish Language Association"},
+    {"target_lang": "Greek", "additional_note": "and adhere to the guidelines of the Centre for the Greek Language"},
+    {"target_lang": "Hindi", "additional_note": "and follow the guidelines of the Central Hindi Directorate"},
+    {"target_lang": "Bengali", "additional_note": "and adhere to the rules of the Bangla Academy"},
+    {"target_lang": "Urdu", "additional_note": "and follow the guidelines of the National Language Authority of Pakistan"},
+    {"target_lang": "Persian", "additional_note": "and adhere to the guidelines of the Academy of Persian Language and Literature"},
+]
+
+def get_additional_note_for_lang(target_lang):
+    note = next((item["additional_note"] for item in notes if item["target_lang"] == target_lang), "")
+    return note
+
 def create_natural_translation_prompt(target_lang, country, improved_translation, writer):
+    additional_note = get_additional_note_for_lang(target_lang)
     natural_translation_prompt = f"""
     You are a skilled writer and editor at a translation agency, fluent in {target_lang}. Your task is to:
 
-    Refine the following translation by infusing the style of {writer}, a renowned 20th-century {target_lang} writer from {country}. The text need to be in {country} locale.
+    Refine the following translation by infusing the style of {writer}, a renowned 20th-century {target_lang} writer from {country}. The text needs to be in {country} locale {additional_note}.
 
     Provide only the edited translation, maintaining the essence and tone of the original text, but with the distinct stylistic nuances of {writer}. 
 
@@ -169,13 +200,15 @@ def create_natural_translation_prompt(target_lang, country, improved_translation
     {improved_translation}
     </TRANSLATION>
     """
+    print("Generated Natural Translation Prompt:\n", natural_translation_prompt)  # Print the prompt for verification
     return natural_translation_prompt
 
 def create_error_free_translation_prompt(target_lang, country, natural_translation, writer):
+    additional_note = get_additional_note_for_lang(target_lang)
     error_free_translation_prompt = f"""
     The following translation has been crafted in the style of {writer}, a famous 20th-century {target_lang} writer from {country}. Your task is to:
 
-    Correct any grammatical, syntactical, or contextual errors while preserving the distinctive style of {writer}.
+    Correct any grammatical, syntactical, or contextual errors while preserving the distinctive style of {writer}. The text needs to be in {country} locale {additional_note}.
 
     Provide only the edited, error-free translation, ensuring the original tone and style remain intact.
 
@@ -183,4 +216,5 @@ def create_error_free_translation_prompt(target_lang, country, natural_translati
     {natural_translation}
     </TRANSLATION>
     """
+    print("Generated Error-Free Translation Prompt:\n", error_free_translation_prompt)  # Print the prompt for verification
     return error_free_translation_prompt
