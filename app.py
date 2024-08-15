@@ -11,6 +11,7 @@ from translate_prompt import extract_text_with_structure, create_translation_pro
 import firebase_admin
 from firebase_admin import credentials, storage
 from datetime import timedelta
+from flask_cors import CORS  # Import CORS
 
 # Initialize Firebase Admin SDK
 cred = credentials.Certificate('firebase-adminsdk.json')
@@ -27,6 +28,7 @@ secret_key = os.getenv("SECRET_KEY")
 api_key = os.getenv("GEMINI_API_KEY")
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes and origins by default
 app.config['ENV'] = flask_env
 app.config['SECRET_KEY'] = secret_key
 # Define the allowed file extensions
@@ -209,10 +211,10 @@ def translate():
         print(f"File {filename} uploaded successfully.")
 
         # Process the file for chunking and translation
-        source_lang = request.form.get('source_lang', 'English')
-        target_lang = request.form.get('target_lang', 'Traditional Chinese')
-        country = request.form.get('country', 'Taiwan')
-        writer = request.form.get('writer', '龍應台')
+        source_lang = request.form.get('source_lang', '')
+        target_lang = request.form.get('target_lang', '')
+        country = request.form.get('country', '')
+        writer = request.form.get('writer', '')
 
         output_dir = 'original_chunks'
 

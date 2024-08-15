@@ -1,5 +1,7 @@
+python-docx==1.1.2
+firebase_admin==6.5.0
 Flask==3.0.3
+flask_cors==4.0.1
 python-dotenv==1.0.1
-python_docx==1.1.2
 Requests==2.32.3
 Werkzeug==3.0.3

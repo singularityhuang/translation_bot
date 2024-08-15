@@ -189,32 +189,73 @@ def get_additional_note_for_lang(target_lang):
 
 def create_natural_translation_prompt(target_lang, country, improved_translation, writer):
     additional_note = get_additional_note_for_lang(target_lang)
-    natural_translation_prompt = f"""
-    You are a skilled writer and editor at a translation agency, fluent in {target_lang}. Your task is to:
+    
+    if writer:
+        natural_translation_prompt = f"""
+        You are a skilled writer and editor at a translation agency, fluent in {target_lang}. Your task is to:
 
-    Refine the following translation by infusing the style of {writer}, a renowned 20th-century {target_lang} writer from {country}. The text needs to be in {country} locale {additional_note}.
+        Refine the following translation by infusing the style of {writer}, a renowned 20th-century {target_lang} writer from {country}. The text needs to be in {country} locale {additional_note}.
 
-    Provide only the edited translation, maintaining the essence and tone of the original text, but with the distinct stylistic nuances of {writer}. 
+        Provide only the edited translation, maintaining the essence and tone of the original text, but with the distinct stylistic nuances of {writer}. 
 
-    <TRANSLATION>
-    {improved_translation}
-    </TRANSLATION>
-    """
+        <TRANSLATION>
+        {improved_translation}
+        </TRANSLATION>
+        """
+    else:
+        natural_translation_prompt = f"""
+        You are a skilled writer and editor at a translation agency, fluent in {target_lang}. Your task is to:
+
+        1. Carefully review the translation text provided between <TRANSLATION></TRANSLATION>.
+        2. Paraphrase any paragraph or section as needed to ensure the translation sounds natural and native.
+        3. Maintain the original style: For example, if the source text is a news article, the translation should read like a news article in {target_lang}.
+        4. Adhere to the writing and speaking conventions used in {country}: For example, in Traditional Chinese with zh-TW locale, "disabled" should be rendered as "殘障人士" rather than "殘疾人".
+        5. Pay special attention to the natural grammatical structure in {target_lang}. For example, in Chinese, it's common to use shorter sentences with fewer subordinate clauses compared to English or other languages. Adjust sentence structure accordingly to reflect the natural flow of {target_lang}.
+
+        Output only the edited translation and nothing else.
+
+        <TRANSLATION>
+        {improved_translation}
+        </TRANSLATION>
+        """
+
     print("Generated Natural Translation Prompt:\n", natural_translation_prompt)  # Print the prompt for verification
     return natural_translation_prompt
 
-def create_error_free_translation_prompt(target_lang, country, natural_translation, writer):
-    additional_note = get_additional_note_for_lang(target_lang)
-    error_free_translation_prompt = f"""
-    The following translation has been crafted in the style of {writer}, a famous 20th-century {target_lang} writer from {country}. Your task is to:
+def create_error_free_translation_prompt(target_lang, country, natural_translation, writer=''):
+    if writer:
+        additional_note = get_additional_note_for_lang(target_lang)
+        error_free_translation_prompt = f"""
+        The following translation has been crafted in the style of {writer}, a famous 20th-century {target_lang} writer from {country}. Your task is to:
 
-    Correct any grammatical, syntactical, or contextual errors while preserving the distinctive style of {writer}. The text needs to be in {country} locale {additional_note}.
+        Correct any grammatical, syntactical, or contextual errors while preserving the distinctive style of {writer}. The text needs to be in {country} locale {additional_note}.
 
-    Provide only the edited, error-free translation, ensuring the original tone and style remain intact.
+        Provide only the edited, error-free translation, ensuring the original tone and style remain intact.
 
-    <TRANSLATION>
-    {natural_translation}
-    </TRANSLATION>
-    """
+        <TRANSLATION>
+        {natural_translation}
+        </TRANSLATION>
+        """
+    else:
+        error_free_translation_prompt = f"""
+        You are a writer and editor at a translation agency fluent in {target_lang}. Your task is to review the following translation for any remaining errors and ensure it adheres to conventional wording in {country}. 
+
+        Please follow these guidelines:
+
+        1. Carefully review the translation text provided within <TRANSLATION></TRANSLATION>.
+        2. Do not paraphrase any sentences.
+        3. Avoid the following errors:
+            - Duplication or omission errors.
+            - Spelling or punctuation errors, including incorrect punctuation marks according to {target_lang} conventions.
+        4. Ensure the translation uses appropriate wording and conforms to the cultural and linguistic norms of {country}. For example, in Traditional Chinese with zh-TW locale, "disabled" should be translated as "殘障人士" instead of "殘疾人".
+
+        Output only the edited, error-free translation and nothing else.
+
+        <TRANSLATION>
+        {natural_translation}
+        </TRANSLATION>
+        """
+    
     print("Generated Error-Free Translation Prompt:\n", error_free_translation_prompt)  # Print the prompt for verification
     return error_free_translation_prompt
+
